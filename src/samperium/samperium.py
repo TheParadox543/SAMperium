@@ -29,6 +29,13 @@ async def pingable(ctx: Context):
     await ctx.send("Pong")
 
 
+@bot.slash_command(name="reload")
+async def reload(ctx: Interaction, name: str):
+    """"""
+    bot.reload_extension(name)
+    await ctx.send(f"{name} is reloaded")
+
+
 bot.load_extensions(
     [
         "monitor",

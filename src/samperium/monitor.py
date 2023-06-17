@@ -43,6 +43,10 @@ async def give_count_permission(
                 await message.add_reaction(reaction)
 
 
+def counting_check(m: Message):
+    return m.author.id == COUNTING_ID
+
+
 class Monitor(Cog):
     """Monitor the different bots and give permissions"""
 
@@ -56,12 +60,10 @@ class Monitor(Cog):
             return
         if not isinstance(message.guild, Guild):
             return
+
+        # * c!vote
         if message.content.startswith("c!vote"):
-
-            def check(m: Message):
-                return m.author.id == COUNTING_ID
-
-            msg = await self.bot.wait_for("message", check=check)
+            msg = await self.bot.wait_for("message", check=counting_check)
             if not isinstance(msg, Message):
                 return
             if len(msg.embeds) != 1:
@@ -75,6 +77,32 @@ class Monitor(Cog):
             if len(saves_str) < 1:
                 return
             saves = int(saves_str[0])
+            countable = message.guild.get_role(COUNTABLE)
+            if countable is None:
+                return
+            await give_count_permission(
+                saves,
+                countable,
+                message.author,
+                message.guild,
+                msg,
+            )
+
+        # * c!user
+        elif message.content.startswith("c!user"):
+            msg = await self.bot.wait_for("message", check=counting_check)
+            if not isinstance(msg, Message):
+                return
+            if len(msg.embeds) != 1:
+                return
+
+            embed_content = msg.embeds[0].to_dict()
+            if "fields" not in embed_content:
+                return
+            embed_field = embed_content["fields"][0]
+            field_value = embed_field["value"]
+            saves_str = field_value.split("Saves: ")[1]
+            saves = int(findall("\d", saves_str)[0])
             countable = message.guild.get_role(COUNTABLE)
             if countable is None:
                 return
