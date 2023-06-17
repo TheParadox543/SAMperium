@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "samperium"
+version = "0.0.1"
+description = "SAM bot for Imperium server"
+authors = ["Paradox543"]
+license = "None"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11.2"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
