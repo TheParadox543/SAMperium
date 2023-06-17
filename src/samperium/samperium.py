@@ -36,6 +36,12 @@ async def reload(ctx: Interaction, name: str):
     await ctx.send(f"{name} is reloaded")
 
 
+@bot.command(name="reload")
+async def reload_command(ctx: Context, name: str):
+    bot.reload_extension(name)
+    await ctx.send(f"{name} is reloaded")
+
+
 bot.load_extensions(
     [
         "monitor",
