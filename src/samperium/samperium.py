@@ -29,4 +29,11 @@ async def pingable(ctx: Context):
     await ctx.send("Pong")
 
 
+bot.load_extensions(
+    [
+        "monitor",
+    ]
+)
+
+
 bot.run(os.getenv("SAMPERIUM"))
