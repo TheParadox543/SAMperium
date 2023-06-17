@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 from nextcord import Game, Intents, Interaction
-from nextcord.ext.commands import Bot, Context
+from nextcord.ext.commands import Bot, Context, is_owner
 
 load_dotenv()
 
@@ -37,6 +37,7 @@ async def reload(ctx: Interaction, name: str):
 
 
 @bot.command(name="reload")
+@is_owner()
 async def reload_command(ctx: Context, name: str):
     bot.reload_extension(name)
     await ctx.send(f"{name} is reloaded")

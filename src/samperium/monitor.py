@@ -2,16 +2,16 @@ from re import match, search, findall
 from pprint import PrettyPrinter
 
 from nextcord import Guild, Member, Message, Role
-from nextcord.ext.commands import Cog, Bot
+from nextcord.ext.commands import Cog, Bot, command, Context, is_owner
 from nextcord.utils import get
 
 COUNTING_BOT = 510016054391734273
 NUMSELLI_BOT = 726560538145849374
 CRAZY_BOT = 935408554997874798
 
-COUNTABLE = 1119485526009974805
-NUMSELLI_COUNTABLE = 1119488910632943656
-CRAZY_COUNTABLE = 1119488960587112448
+COUNTABLE = 1017143547541078066
+NUMSELLI_COUNTABLE = 1115578157727219712
+CRAZY_COUNTABLE = 1115578109056516136
 
 pp = PrettyPrinter(indent=4)
 
@@ -103,12 +103,20 @@ class Monitor(Cog):
             )
 
         # * c!user
-        elif message.author.id == COUNTING_BOT and len(message.embeds) == 1:
-            embed_content = message.embeds[0].to_dict()
+        elif message.content.startswith("c!user"):
+            msg = await self.bot.wait_for("message", check=counting_check)
+            if not isinstance(msg, Message):
+                return
+            if len(msg.embeds) != 1:
+                return
+
+            embed_content = msg.embeds[0].to_dict()
             user_name = embed_content.get("title")
             if user_name is None:
                 return
-            user = message.guild.get_member_named(user_name)
+            await message.channel.send(user_name.split("#")[0])
+            user = message.guild.get_member_named(user_name.split("#")[0])
+            await message.channel.send(f"Counter is: {user}")
             if user is None:
                 return
             if "fields" not in embed_content:
@@ -125,7 +133,7 @@ class Monitor(Cog):
                 countable,
                 user,
                 message.guild,
-                message,
+                msg,
                 COUNTING_BOT,
             )
 
@@ -271,6 +279,15 @@ class Monitor(Cog):
                 message,
                 COUNTING_BOT,
             )
+
+    @command(name="clear")
+    @is_owner()
+    async def remove_roles(self, ctx: Context, role: Role):
+        """Remove all users from the role"""
+        for member in role.members:
+            # if member.name == "paradox543":
+            await member.remove_roles(role, reason="Clearing roles from users")
+            await ctx.send(f"{role} removed from {member.name}")
 
 
 def setup(bot: Bot):
