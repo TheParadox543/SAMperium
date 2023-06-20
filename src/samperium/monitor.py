@@ -224,7 +224,6 @@ class Monitor(Cog):
                 message,
                 CRAZY_BOT,
             )
-            # await message.channel.send(f"{field_value}")
 
         # * Error from counting
         if (
@@ -236,7 +235,6 @@ class Monitor(Cog):
             content = message.content
             numbers = findall("\d+", content)  # type: ignore
             user_id = int(numbers[0])
-            saves = int(numbers[2])
             user = message.guild.get_member(user_id)
             if user is None:
                 await message.channel.send("Couldn't find who made the mistake")
@@ -244,6 +242,10 @@ class Monitor(Cog):
             countable = message.guild.get_role(COUNTABLE)
             if countable is None:
                 return
+            if "your saves" in content:
+                saves = int(numbers[2])
+            else:
+                saves = 0
             await give_count_permission(
                 saves,
                 countable,
@@ -258,18 +260,23 @@ class Monitor(Cog):
             message.author.id == CRAZY_BOT
             and message.content is not None
             and len(message.embeds) == 0
-            and "has used a save" in message.content
+            and "has used a" in message.content
         ):
             content = message.content
             numbers = findall("\d+", content)  # type: ignore
             user_id = int(numbers[0])
-            saves = int(numbers[1])
             user = message.guild.get_member(user_id)
             if user is None:
                 await message.channel.send("Couldn't find who made the mistake")
                 return
             countable = message.guild.get_role(CRAZY_COUNTABLE)
             if countable is None:
+                return
+            if "has used a save" in content:
+                saves = int(numbers[1])
+            elif "has used a channel save" in content:
+                saves = 0
+            else:
                 return
             await give_count_permission(
                 saves,
