@@ -6,9 +6,19 @@ from pprint import PrettyPrinter
 from re import I, findall, match
 from typing import cast
 
-from nextcord import Embed, Guild, Interaction, Member, Message, Role, TextChannel
+from nextcord import (
+    Embed,
+    Guild,
+    Interaction,
+    Member,
+    Message,
+    Reaction,
+    Role,
+    TextChannel,
+    User,
+)
 from nextcord.errors import Forbidden
-from nextcord.ext.commands import Bot, Cog, Context, command, is_owner
+from nextcord.ext.commands import Bot, Cog, Context, command, group, is_owner
 from nextcord.ui import Button, View, button
 from nextcord.utils import get
 
@@ -105,11 +115,11 @@ def generate_prime_message(prime: int, user: Member, numbers: int = 5):
         str: The message to be displayed
         int: The last prime number generated
     """
-    prime_str = f"Prime numbers for {user.display_name} after {prime}: "
+    prime_str = f"Prime numbers for `{user.display_name}` after {prime}: "
     for _ in range(0, numbers, 1):
         prime = next_prime(prime)
-        prime_str += f"{prime}, "
-    return prime_str, prime
+        prime_str += f"*{prime}*, "
+    return prime_str
 
 
 class PrimeView(View):
@@ -118,7 +128,7 @@ class PrimeView(View):
         self.prime = prime
         self.user = user
 
-    @button(label=">>")
+    @button(label=">>", custom_id="prime generator")
     async def next_prime_values(self, button: Button, ctx: Interaction):
         if not isinstance(ctx.user, Member):
             return
@@ -129,18 +139,12 @@ class PrimeView(View):
             )
             return
         numbers = get_prime(ctx.user)
-        prime_str, prime_last = generate_prime_message(self.prime, ctx.user, numbers)
+        prime_str = generate_prime_message(self.prime, ctx.user, numbers)
         button.disabled = True
         await ctx.response.edit_message(view=self)
-        prime_view = PrimeView(prime_last, ctx.user)
         if not isinstance(ctx.channel, TextChannel):
             return
         await ctx.channel.send(prime_str)
-        await sleep(30)
-        await ctx.channel.send(
-            f"If you want numbers after: {prime_last}",
-            view=prime_view,
-        )
 
 
 class Monitor(Cog):
@@ -148,6 +152,42 @@ class Monitor(Cog):
 
     def __init__(self, bot: Bot):
         self.bot = bot
+
+    @Cog.listener()
+    async def on_ready(self):
+        """Load the view if bot restarts"""
+        prime_channel = self.bot.get_channel(PRIME_CHANNEL_ID)
+        if not isinstance(prime_channel, TextChannel):
+            return
+
+        message_id = prime_channel.last_message_id
+        if message_id is None:
+            return
+
+        view_found = False
+        message = None
+        author = None
+        async for msg in prime_channel.history():
+            if view_found:
+                author = msg.author
+                break
+            if msg.author == self.bot.user:
+                message = msg
+                view_found = True
+        else:
+            return
+        if message is None:
+            return
+
+        if message.author != self.bot.user:
+            return
+        prime_num = int(findall(r"\d+", message.content)[0])
+        if not isinstance(author, Member):
+            return
+        self.bot.add_view(
+            PrimeView(prime_num, author),
+            message_id=message.id,
+        )
 
     @Cog.listener()
     async def on_message(self, message: Message):
@@ -165,14 +205,6 @@ class Monitor(Cog):
                     await message.add_reaction(rev_reaction)
                 except Forbidden:
                     pass
-
-        # if message.channel.id == PRIME_CHANNEL_ID:
-        #     try:
-        #         number = int(message.content)
-        #     except ValueError:
-        #         return
-        #   next_prime_number = next_prime(number)
-        #   await message.channel.send(f"`Next: {next_prime_number}`")
 
         # * c!vote
         if match("c!vote", message.content, I):
@@ -337,17 +369,17 @@ class Monitor(Cog):
                 return
             if "Stats for" not in embed_title:
                 return
-            user_name = embed_title.split("Stats for ")[1]
-            if "𝐢𝐦𝐩𝐞𝐫𝐢𝐮𝐦" in user_name:
+            if "fields" not in embed_content:
                 return
+            user_name = embed_title.split("Stats for ")[1]
             if user_name is None:
                 await message.channel.send("Could not find user name")
+                return
+            if "𝐢𝐦𝐩𝐞𝐫𝐢𝐮𝐦" in user_name:
                 return
             user = message.guild.get_member_named(user_name.replace("\\", ""))
             if user is None:
                 await message.channel.send(f"Could not find the counter: `{user_name}`")
-                return
-            if "fields" not in embed_content:
                 return
             embed_field = embed_content["fields"][0]
             field_value = embed_field["value"]
@@ -426,6 +458,24 @@ class Monitor(Cog):
                 message,
                 COUNTING_BOT,
             )
+
+    @Cog.listener()
+    async def on_reaction_add(self, reaction: Reaction, user: Member | User):
+        """Find when bot stops"""
+
+        if (
+            isinstance(reaction.emoji, str)
+            and user.id == CRAZY_BOT
+            and reaction.emoji == "🛑"
+        ):
+            message = reaction.message
+            if message.channel.id != PRIME_CHANNEL_ID:
+                return
+            prime_num = int(message.content.split()[0])
+            if not isinstance(message.author, Member):
+                return
+            prime_view = PrimeView(prime_num, message.author)
+            await message.channel.send(f"Numbers after {prime_num} :", view=prime_view)
 
     @command(name="clear")
     @is_owner()
@@ -522,30 +572,38 @@ class Monitor(Cog):
         embedVar = Embed(title=title_msg, description=msg)
         await ctx.send(embed=embedVar)
 
-    @command(name="prime")
+    @group(name="prime", invoke_without_command=True)
     async def tell_next_prime_nos(
         self,
         ctx: Context,
         prime: int,
-        numbers: int | None = None,
     ):
         """Display the next set of prime numbers"""
+
         if not isinstance(ctx.author, Member):
             return
-        if numbers is None:
-            numbers = get_prime(ctx.author)
-        else:
-            if numbers < 3 or numbers > 7:
-                await ctx.send("Invalid count given. Type between 3 and 7")
-                return
-            result = set_prime(ctx.author, numbers)
-            if result == 1:
-                await ctx.send(f"{ctx.author.mention} count has been set to {numbers}")
-        prime_str, prime_last = generate_prime_message(prime, ctx.author, numbers)
-        prime_view = PrimeView(prime_last, ctx.author)
+        numbers = get_prime(ctx.author)
+        prime_str = generate_prime_message(prime, ctx.author, numbers)
         await ctx.send(prime_str)
-        await sleep(30)
-        await ctx.channel.send(view=prime_view)
+
+    @tell_next_prime_nos.command(name="set")
+    async def set_prime_count(
+        self,
+        ctx: Context,
+        numbers: int,
+    ):
+        """Set the number of prime numbers to be input"""
+
+        if not isinstance(ctx.author, Member):
+            return
+        if numbers < 3 or numbers > 7:
+            await ctx.send("Not a valid count. Please type between 3 and 7")
+            return
+        result = set_prime(ctx.author, numbers)
+        if result == 1:
+            await ctx.send(f"{ctx.author.mention} count has been set {numbers}.")
+        else:
+            await ctx.send("No change happened")
 
 
 def setup(bot: Bot):
