@@ -92,7 +92,7 @@ def next_prime(num: int):
     return num
 
 
-def generate_prime_message(prime: int, numbers: int = 5):
+def generate_prime_message(prime: int, user: Member, numbers: int = 5):
     """Generate a string containing the prime numbers, and return it
     with the last prime number
 
@@ -105,7 +105,7 @@ def generate_prime_message(prime: int, numbers: int = 5):
         str: The message to be displayed
         int: The last prime number generated
     """
-    prime_str = f"Prime numbers after {prime}: "
+    prime_str = f"Prime numbers for {user.display_name} after {prime}: "
     for _ in range(0, numbers, 1):
         prime = next_prime(prime)
         prime_str += f"{prime}, "
@@ -113,24 +113,34 @@ def generate_prime_message(prime: int, numbers: int = 5):
 
 
 class PrimeView(View):
-    def __init__(self, prime: int):
+    def __init__(self, prime: int, user: Member):
         super().__init__(timeout=None)
         self.prime = prime
+        self.user = user
 
     @button(label=">>")
     async def next_prime_values(self, button: Button, ctx: Interaction):
         if not isinstance(ctx.user, Member):
             return
+        if ctx.user == self.user:
+            await ctx.send(
+                "You can't press the button since you just typed some numbers.",
+                ephemeral=True,
+            )
+            return
         numbers = get_prime(ctx.user)
-        prime_str, prime = generate_prime_message(self.prime, numbers)
+        prime_str, prime_last = generate_prime_message(self.prime, ctx.user, numbers)
         button.disabled = True
         await ctx.response.edit_message(view=self)
-        prime_view = PrimeView(prime)
+        prime_view = PrimeView(prime_last, ctx.user)
         if not isinstance(ctx.channel, TextChannel):
             return
         await ctx.channel.send(prime_str)
-        await sleep(15)
-        await ctx.channel.send(view=prime_view)
+        await sleep(30)
+        await ctx.channel.send(
+            f"If you want numbers after: {prime_last}",
+            view=prime_view,
+        )
 
 
 class Monitor(Cog):
@@ -525,13 +535,16 @@ class Monitor(Cog):
         if numbers is None:
             numbers = get_prime(ctx.author)
         else:
+            if numbers < 3 or numbers > 7:
+                await ctx.send("Invalid count given. Type between 3 and 7")
+                return
             result = set_prime(ctx.author, numbers)
             if result == 1:
-                await ctx.send(f"Your count has been set to {numbers}")
-        prime_str, prime_last = generate_prime_message(prime, numbers)
-        prime_view = PrimeView(prime_last)
+                await ctx.send(f"{ctx.author.mention} count has been set to {numbers}")
+        prime_str, prime_last = generate_prime_message(prime, ctx.author, numbers)
+        prime_view = PrimeView(prime_last, ctx.author)
         await ctx.send(prime_str)
-        await sleep(15)
+        await sleep(30)
         await ctx.channel.send(view=prime_view)
 
 
