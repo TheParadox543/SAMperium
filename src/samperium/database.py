@@ -56,3 +56,33 @@ def get_data(user: Member):
 
     result = user_collection.find_one({"_id": f"{user.id}"})
     return result
+
+
+def get_prime(user: Member):
+    """Get the count of the user for prime channel
+
+    Args:
+        user (Member): The user who clicked the button
+    """
+
+    result = user_collection.find_one({"_id": f"{user.id}"})
+    if not isinstance(result, dict):
+        return 5
+    if "prime" not in result:
+        return 5
+    return result.get("prime", 5)
+
+
+def set_prime(user: Member, count: int = 5):
+    """Set the prime count of the user
+
+    Args:
+        user (Member): The user who called the interaction
+    """
+
+    result = user_collection.update_one(
+        {"_id": f"{user.id}"},
+        {"$set": {"prime": count}},
+        True,
+    )
+    return result.modified_count

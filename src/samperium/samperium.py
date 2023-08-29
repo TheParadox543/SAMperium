@@ -15,7 +15,7 @@ bot = Bot(command_prefix="!", intents=intents)
 async def on_ready():
     """Notify when bot is ready"""
     await bot.change_presence(activity=Game("Testing"))
-    # await bot.change_presence(activity=Game("watch the counts"))
+    # await bot.change_presence(activity=Game("Helping"))
     print(f"We have logged in as {bot.user}")
 
 

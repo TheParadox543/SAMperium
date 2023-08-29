@@ -1,19 +1,23 @@
+from asyncio import sleep
 from datetime import datetime, timedelta
 from decimal import ROUND_UP, Decimal, getcontext
 from math import sqrt
 from pprint import PrettyPrinter
-from re import findall, match, search
+from re import I, findall, match
 from typing import cast
 
-from nextcord import Embed, Guild, Member, Message, Role
+from nextcord import Embed, Guild, Interaction, Member, Message, Role, TextChannel
+from nextcord.errors import Forbidden
 from nextcord.ext.commands import Bot, Cog, Context, command, is_owner
+from nextcord.ui import Button, View, button
 from nextcord.utils import get
 
-from database import get_data, save_data
+from database import get_data, get_prime, save_data, set_prime
 
 COUNTING_BOT = 510016054391734273
 NUMSELLI_BOT = 726560538145849374
 CRAZY_BOT = 935408554997874798
+CLASSIC_BOT = 639599059036012605
 
 COUNTABLE = 1017143547541078066
 NUMSELLI_COUNTABLE = 1115578157727219712
@@ -25,7 +29,7 @@ pp = PrettyPrinter(indent=4)
 
 
 async def give_count_permission(
-    saves: int,
+    saves: int | float,
     role: Role,
     counter: Member,
     guild: Guild,
@@ -73,6 +77,7 @@ def prime(num: int):
     for i in range(3, int(sqrt(num)) + 1, 2):
         if num % i == 0:
             f = True
+            break
     return f
 
 
@@ -85,6 +90,47 @@ def next_prime(num: int):
             num += 1
         f = prime(num)
     return num
+
+
+def generate_prime_message(prime: int, numbers: int = 5):
+    """Generate a string containing the prime numbers, and return it
+    with the last prime number
+
+    Args:
+        prime (int): The prime number typed
+        numbers (int, optional): The number of prime numbers to be generated.
+        Defaults to 5.
+
+    Returns:
+        str: The message to be displayed
+        int: The last prime number generated
+    """
+    prime_str = f"Prime numbers after {prime}: "
+    for _ in range(0, numbers, 1):
+        prime = next_prime(prime)
+        prime_str += f"{prime}, "
+    return prime_str, prime
+
+
+class PrimeView(View):
+    def __init__(self, prime: int):
+        super().__init__(timeout=None)
+        self.prime = prime
+
+    @button(label=">>")
+    async def next_prime_values(self, button: Button, ctx: Interaction):
+        if not isinstance(ctx.user, Member):
+            return
+        numbers = get_prime(ctx.user)
+        prime_str, prime = generate_prime_message(self.prime, numbers)
+        button.disabled = True
+        await ctx.response.edit_message(view=self)
+        prime_view = PrimeView(prime)
+        if not isinstance(ctx.channel, TextChannel):
+            return
+        await ctx.channel.send(prime_str)
+        await sleep(15)
+        await ctx.channel.send(view=prime_view)
 
 
 class Monitor(Cog):
@@ -105,7 +151,10 @@ class Monitor(Cog):
         if len(message.content) > 1 and message.content == message.content[::-1]:
             rev_reaction = get(message.guild.emojis, name="alternating_peek")
             if rev_reaction is not None:
-                await message.add_reaction(rev_reaction)
+                try:
+                    await message.add_reaction(rev_reaction)
+                except Forbidden:
+                    pass
 
         # if message.channel.id == PRIME_CHANNEL_ID:
         #     try:
@@ -116,7 +165,7 @@ class Monitor(Cog):
         #   await message.channel.send(f"`Next: {next_prime_number}`")
 
         # * c!vote
-        if message.content.startswith("c!vote"):
+        if match("c!vote", message.content, I):
             msg = await self.bot.wait_for("message", check=counting_check)
             if not isinstance(msg, Message):
                 return
@@ -144,7 +193,7 @@ class Monitor(Cog):
             )
 
         # * c!user
-        elif message.content.startswith("c!user"):
+        elif match("c!user", message.content, I):
             msg = await self.bot.wait_for("message", check=counting_check)
             if not isinstance(msg, Message):
                 return
@@ -172,7 +221,7 @@ class Monitor(Cog):
             correct = int(number_list[1])
             wrong = int(number_list[2])
             save_data(user, "counting", rate, correct, wrong, message.created_at)
-            saves = int(number_list[5])
+            saves = int(float(number_list[5]))
             countable = message.guild.get_role(COUNTABLE)
             if countable is None:
                 return
@@ -202,13 +251,21 @@ class Monitor(Cog):
                     return
                 if "fields" not in embed_content:
                     return
-                embed_field = embed_content["fields"][0]
-                field_value = embed_field["value"]
-                saves_str = field_value.split("Saves left: ")[1]
-                saves = int(findall(r"\d", saves_str)[0])
+                field_value = embed_content["fields"][0]["value"]
+                number_list = findall(
+                    r"[0-9]+\.*[0-9]*",
+                    field_value.replace(",", ""),
+                )
+                rate = float(number_list[0])
+                correct = int(number_list[1])
+                wrong = int(number_list[2])
+                saves = float(number_list[5])
+                # saves_str = field_value.split("Saves left: ")[1]
+                # saves = int(findall(r"\d", saves_str)[0])
                 countable = message.guild.get_role(NUMSELLI_COUNTABLE)
                 if countable is None:
                     return
+                save_data(user, "numselli", rate, correct, wrong, message.created_at)
                 await give_count_permission(
                     saves,
                     countable,
@@ -243,6 +300,25 @@ class Monitor(Cog):
                     NUMSELLI_BOT,
                 )
 
+        elif message.author.id == CLASSIC_BOT and len(message.embeds) == 1:
+            embed_content = message.embeds[0].to_dict()
+            if "author" not in embed_content:
+                return
+            if "fields" not in embed_content:
+                return
+            if "name" not in embed_content["author"]:
+                return
+            user_name = embed_content["author"]["name"]
+            user = message.guild.get_member_named(user_name)
+            if user is None:
+                return
+            data = embed_content["fields"][0]["value"].replace(",", "")
+            number_list = findall(r"[0-9]+\.*[0-9]*", data)
+            rate = float(number_list[0])
+            correct = int(number_list[1])
+            wrong = int(number_list[2])
+            save_data(user, "classic", rate, correct, wrong, message.created_at)
+
         # * Crazy Counting user
         elif message.author.id == CRAZY_BOT and len(message.embeds) == 1:
             embed_content = message.embeds[0].to_dict()
@@ -252,10 +328,14 @@ class Monitor(Cog):
             if "Stats for" not in embed_title:
                 return
             user_name = embed_title.split("Stats for ")[1]
-            if user_name is None:
+            if "𝐢𝐦𝐩𝐞𝐫𝐢𝐮𝐦" in user_name:
                 return
-            user = message.guild.get_member_named(user_name.split("#")[0])
+            if user_name is None:
+                await message.channel.send("Could not find user name")
+                return
+            user = message.guild.get_member_named(user_name.replace("\\", ""))
             if user is None:
+                await message.channel.send(f"Could not find the counter: `{user_name}`")
                 return
             if "fields" not in embed_content:
                 return
@@ -399,8 +479,30 @@ class Monitor(Cog):
                     Decimal("1"), ROUND_UP
                 )
                 new_cor = correct + x
-                new_rate = (new_rate * 100).quantize(Decimal("10.000"))
+                new_rate = (new_rate * 100).quantize(Decimal("10.000"), ROUND_UP)
                 msg += f"`classic`: Rank up to {new_rate}% at **{new_cor}**. "
+                msg += f"You need ~**{x}** more numbers.\n"
+
+        numselli_post = user_data.get("numselli")
+        if (
+            numselli_post is not None
+            and numselli_post.get("time") + timedelta(minutes=30) > datetime.utcnow()
+        ):
+            correct = Decimal(numselli_post.get("correct", 0))
+            wrong = Decimal(numselli_post.get("wrong", 0))
+            total = correct + wrong
+            rate = (correct / total).quantize(Decimal("1.0000"))
+            if rate >= Decimal("0.9998"):
+                msg += "`numselli`: The bot can't calculate the number of counts "
+                msg += "you need to rank up\n"
+            else:
+                new_rate = rate + Decimal("0.00005")
+                x = ((new_rate * total - correct) / (1 - new_rate)).quantize(
+                    Decimal("1"), ROUND_UP
+                )
+                new_cor = correct + x
+                new_rate = (new_rate * 100).quantize(Decimal("10.00"), ROUND_UP)
+                msg += f"`numselli`: Rank up to {new_rate}% at **{new_cor}**. "
                 msg += f"You need ~**{x}** more numbers.\n"
 
         if msg == "":
@@ -409,6 +511,28 @@ class Monitor(Cog):
         title_msg = f"Rank up stats for {user.display_name}"
         embedVar = Embed(title=title_msg, description=msg)
         await ctx.send(embed=embedVar)
+
+    @command(name="prime")
+    async def tell_next_prime_nos(
+        self,
+        ctx: Context,
+        prime: int,
+        numbers: int | None = None,
+    ):
+        """Display the next set of prime numbers"""
+        if not isinstance(ctx.author, Member):
+            return
+        if numbers is None:
+            numbers = get_prime(ctx.author)
+        else:
+            result = set_prime(ctx.author, numbers)
+            if result == 1:
+                await ctx.send(f"Your count has been set to {numbers}")
+        prime_str, prime_last = generate_prime_message(prime, numbers)
+        prime_view = PrimeView(prime_last)
+        await ctx.send(prime_str)
+        await sleep(15)
+        await ctx.channel.send(view=prime_view)
 
 
 def setup(bot: Bot):
