@@ -205,7 +205,7 @@ class Monitor(Cog):
                     await message.add_reaction(rev_reaction)
                 except Forbidden:
                     pass
-        elif "666" in message.content:
+        if "666" in message.content:
             nekoevil = get(message.guild.emojis, name="nekoevil")
             if nekoevil is not None:
                 try:
