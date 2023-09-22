@@ -47,6 +47,8 @@ async def reload_command(ctx: Context, name: str):
 bot.load_extensions(
     [
         "monitor",
+        "presence",
+        "tree",
     ]
 )
 
